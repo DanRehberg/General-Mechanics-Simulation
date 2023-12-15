@@ -235,11 +235,11 @@ int main(int argc, char* argv[])
 
 					//Time integration
 					n.update(Simulation::deltaTime);
+					//Events to simulate
+					Collision::simulatePair(n, ground);
 					tickSum = 0;
 					++currentFrame;
 				}
-
-				Collision::simulatePair(n, ground);
 
 				glBindVertexArray(vao);
 				glUseProgram(program);
