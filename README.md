@@ -11,9 +11,11 @@ Notes on some dependencies:
 
 ## Updates
 
+### January 12, 2024
 **Primary Change**
 - N-Body NGon Testing
 ![Boxes on Boxes](https://github.com/DanRehberg/General-Mechanics-Simulation/blob/main/media/4gon5itrVerlet540p.gif)
+
 **Pending Change**
 - CoM Intersection with another body fixes poor line-line overlap
   - Works with Verlet Integration
