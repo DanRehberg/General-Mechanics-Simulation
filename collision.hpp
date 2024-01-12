@@ -5,6 +5,8 @@
 #include <glm/glm.hpp>
 #include "particle.hpp"
 
+extern size_t objectID;
+
 class NGon;
 
 class Collision
@@ -24,7 +26,9 @@ public:
 	static bool aabb(const glm::vec3& minA, const glm::vec3& maxA, const glm::vec3& minB, const glm::vec3& maxB);
 	static glm::vec3 barycentricWeights(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c, const glm::vec3& test);
 	static bool pointTriangle2D(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c, const glm::vec3& test);
+	static void selfConstraints(NGon& object);
 	static void simulatePair(NGon& incident, NGon& reference);
+	static void solveConstraints();
 
 	virtual void update(float dt) = 0;
 
