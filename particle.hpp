@@ -9,10 +9,14 @@ class Particle final : public Integration
 public:
 	Particle();
 	Particle(const float mass, const glm::vec3& position);
-	
+	Particle(const Particle& cp);
+
+	Particle& operator=(const Particle& cp);
+
 	void addPosition(const glm::vec3& offset);
 	float getInverseMass() const;
 	const glm::vec3& getPosition() const;
+	const glm::vec3& getPrevPosition() const;
 	float getMass() const;
 	float getShockInverseMass() const;
 	float getShockMass() const;
@@ -25,8 +29,10 @@ public:
 	void integrateVelocity(float dt);
 	void verlet(float dt);
 
+	size_t id;
+
 private:
-	friend class Collision;//tag return
+	friend class Collision;
 	float curInvMass;
 	float curMass;
 	float invMass;
