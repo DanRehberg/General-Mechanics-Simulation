@@ -2,11 +2,18 @@
 #include <cmath>
 #include "ngon.hpp"
 
+NGon::NGon() : Collision(glm::vec3(0.0f))
+{
+
+}
+
 NGon::NGon(const glm::vec3& position, const float length, const size_t sides, const float mass) : Collision(position), color(glm::vec3(1.0f)), invSize(1.0f / static_cast<float>(sides))
 {
 	if (sides <= 2 || sides > 100) throw std::domain_error::domain_error("NGon must be less then 100 sided and greater than 2 sided.");
 	lines.resize(sides);
 	vertices.resize(sides);
+
+	id = objectID++;
 
 	float r = length;
 	glm::vec3 radius(-r, -r, 0.0f);
@@ -17,6 +24,7 @@ NGon::NGon(const glm::vec3& position, const float length, const size_t sides, co
 	glm::vec3 centroid(0.0f);
 	for (size_t i = 0; i < sides; ++i)
 	{
+		vertices[i].id = id;
 		float cosRad = std::cosf(rads), sinRad = std::sinf(rads);
 		float x = -r, y = -r;
 		radius.x = x * cosRad - y * sinRad;
@@ -32,17 +40,38 @@ NGon::NGon(const glm::vec3& position, const float length, const size_t sides, co
 	max.z = 0.0f;
 	//center = Particle(mass, centroid / static_cast<float>(vertices.size()));
 	center = Particle(mass, 0.5f * (min + max));
+	center.id = id;
 	this->radius = std::sqrtf(length * length * 2);
+	glm::vec3 hullEdgeNorm = glm::normalize(glm::cross(vertices[0].getPosition() - vertices[1].getPosition(), glm::vec3(0.0f, 0.0f, 1.0f)));
+	shortEdge = glm::dot(hullEdgeNorm, center.getPosition() - vertices[0].getPosition());
+	if (shortEdge < 0.0f) shortEdge = -shortEdge;
 	neighbor = glm::length(vertices[0].getPosition() - vertices[1].getPosition());
+}
+
+NGon::NGon(const NGon& cp)
+{
+	color = cp.color;
+	id = cp.id;
+	invSize = cp.invSize;
+	lines = cp.lines;
+	neighbor = cp.neighbor;
+	radius = cp.radius;
+	shortEdge = cp.shortEdge;
+	center = cp.center;
+	vertices = cp.vertices;
+	min = cp.min;
+	max = cp.max;
 }
 
 NGon& NGon::operator=(const NGon& cp)
 {
 	color = cp.color;
+	id = cp.id;
 	invSize = cp.invSize;
 	lines = cp.lines;
 	neighbor = cp.neighbor;
 	radius = cp.radius;
+	shortEdge = cp.shortEdge;
 	center = cp.center;
 	vertices = cp.vertices;
 	min = cp.min;
@@ -64,6 +93,11 @@ void NGon::getColor(float vals[3]) const
 	vals[0] = color.x;
 	vals[1] = color.y;
 	vals[2] = color.z;
+}
+
+size_t NGon::getID() const
+{
+	return id;
 }
 
 void NGon::getLine(float vals[6], size_t index) const
@@ -94,9 +128,25 @@ glm::vec3 NGon::getParticle(size_t index) const
 	return vertices[index].getPosition();
 }
 
+float NGon::getParticleMass(size_t index) const
+{
+	if (index >= getN()) throw std::range_error::range_error("getParticleMass called with an out of range index.");
+	return vertices[index].getMass();
+}
+
 float NGon::getRadius() const
 {
 	return radius;
+}
+
+float NGon::getShortEdge() const
+{
+	return shortEdge;
+}
+
+const glm::vec3& NGon::getVelocity() const
+{
+	return center.getVelocity();
 }
 
 void NGon::setColor(const glm::vec3& val)

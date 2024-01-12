@@ -12,9 +12,9 @@ public:
 	Constraint(Particle& incident, Particle& reference);
 	Constraint(const Constraint& cp);
 	Constraint& operator=(const Constraint& cp);
-	void lagrangian(const glm::vec3& jacobi, Particle& bodyA, Particle& bodyB);
+	float lagrangian(const glm::vec3& jacobi, Particle& bodyA, Particle& bodyB);
 	float maximumDirection(const glm::vec3& searchDirection) const;
-	virtual void solve() = 0;//return langrange scalar
+	virtual void solve() = 0;
 	void solveShock(const glm::vec3& dir);
 
 protected:

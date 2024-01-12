@@ -4,23 +4,7 @@
 #include "linePointConstraint.hpp"
 #include <algorithm>
 
-/*
-11/26/2023 Quick Notes:
-
-The manner in which this system is used could be meaningful to generating an alternative approach to
-	position-based dynamics over sparse shape structures.
-	Notably, the stack of positions filling a volume is meaningful in the sense that it does correctly
-		build out interactions with large coupled bodies by unifying everything under distance constraints.
-		However, it can be too many particles for some systems with soft/hard time constraints.
-			E.g., small compute budget for offline, or real-time constraints.
-	So, what about generating new contact points dynamically along features that are greater than 0D surfaces?
-		Keeping a record of these higher-dimensional surfaces could be meaningful to creating the correct
-			projection constraints of surfaces as well.
-			I.e., in 2D, a point under a line (violating distance to the line) could generate a temporary
-				new edge segment between the endpoints of the line with its own distance constraint to the CoM
-				of the object it is attached.
-
-*/
+size_t objectID = 0;
 
 Collision::Collision() : min(0.f), max(0.f)
 {
@@ -39,7 +23,7 @@ Collision::Collision(const glm::vec3& m0, const glm::vec3& m1) : min(min), max(m
 
 	this->max = testMax;
 	this->min = testMin;
-	
+
 	center.position = 0.5f * (max + min);
 }
 
@@ -125,7 +109,30 @@ bool Collision::pointTriangle2D(const glm::vec3& a, const glm::vec3& b, const gl
 	{
 		return true;
 	}
+	//Below causes a cohesion effect with some added constraints for adjacent corners of objects
+	//	Goal was to correct corner case of vertex hull edge overlap
+	/*glm::vec3 BA = b - a, TA = test - a, TB = test - b;
+	float mBA = glm::length(BA), mTA = glm::length(TA), mTB = glm::length(TB);
+	if (mTA < 2.75f || mTB < 2.75f)return true;*/
 	return false;
+}
+
+std::vector<LinePointConstraint> lineError;
+std::vector<DistanceConstraint> selfError;
+
+void Collision::selfConstraints(NGon& obj)
+{
+	Collision* o = &obj;
+	std::vector<Particle>& vO(o->vertices);
+	if (obj.getParticleMass(0) != 0.0f)
+	{
+		for (size_t i = 0; i < obj.getN(); ++i)
+		{
+			size_t nextIndex = (i == obj.getN() - 1) ? 0 : i + 1;
+			selfError.push_back(DistanceConstraint(vO[i], o->center, obj.getRadius()));
+			selfError.push_back(DistanceConstraint(vO[i], vO[nextIndex], obj.getNeighbor()));
+		}
+	}
 }
 
 void Collision::simulatePair(NGon& A, NGon& B)
@@ -139,26 +146,25 @@ void Collision::simulatePair(NGon& A, NGon& B)
 	std::vector<Particle>& vertA(a->vertices);
 	std::vector<Particle>& vertB(b->vertices);
 
-	//Validating software questions through the input space partition
-	//	- General overview is can a system converge to a stable solution faster given the order of constraints
-	//		Shock propagation says yes IFF the final pass of the constraints is ordered from the closest point of gravity outwards
-	//		-- This is an assumption that in an impulse-based solve (Brian Mirtich) the persistant acceleration influence is gravity
-	//	- Position-based dynamics is an appealing approach to solve rigid body problems because it unifies all simulation into distance cosntraints
-	//	- PBD has shown that Guendelmann et al. appraoch of shock propagation holds
-	//	? However, building a physics simulation for a given system requires calibration ?
-	//		Assuming someone chose to implement a PBD simulation given its nice simplifications
-
-
-	std::vector<LinePointConstraint> lineError;
-	std::vector<DistanceConstraint> selfError;
-
 	if (aabb(A.getMin(), A.getMax(), B.getMin(), B.getMax()))
 	{
+		//CoM case A
+		//	provide distance constraint between CoMs IFF they are within there shortest collision distance (distance from CoM to hull edge)
+		glm::vec3 rv = a->center.getVelocity() - b->center.getVelocity();
+		float rvn = glm::dot(rv, glm::normalize(oA - oB));
+		if (rvn < 0.0f)
+		{
+			if (glm::length(oA - oB) <= A.getShortEdge() + B.getShortEdge())
+			{
+				selfError.push_back(DistanceConstraint(a->center, b->center, A.getShortEdge() + B.getShortEdge()));
+			}
+		}
+
+		//Hull vertice collision tests (effectively, is hull inside NGon "pie" triangle)
 		for (size_t i = 0; i < B.getN(); ++i)
 		{
 			glm::vec3 b0 = vertB[i].getPosition(), b1;
 			size_t index1 = i + 1;
-			bool intersection = false;
 			if (i == B.getN() - 1)
 			{
 				b1 = vertB[0].getPosition();
@@ -166,22 +172,67 @@ void Collision::simulatePair(NGon& A, NGon& B)
 			}
 			else b1 = vertB[i + 1].getPosition();
 
+			//CoM case B
+			//	provide a line distance constraint for a CoM to an edge segment (fails to work with 3 and 4 gons)
+			/*if (pointTriangle2D(b0, b1, oB, oA))
+			{
+				lineError.push_back(LinePointConstraint(a->center, vertB[i], vertB[index1], b->center));
+			}*/
+
+			//Hull vertices
 			for (size_t j = 0; j < A.getN(); ++j)
 			{
+				//TEST BEGIN
+				//	Expanding object B's hull
+				/*glm::vec3 offsetB0 = b0 + 0.5f * glm::normalize(b0 - oB);
+				glm::vec3 offsetB1 = b1 + 0.5f * glm::normalize(b1 - oB);
+				if (pointTriangle2D(offsetB0, offsetB1, oB, vertA[j].getPosition()))*/
+				//TEST END
 				if (pointTriangle2D(b0, b1, oB, vertA[j].getPosition()))
 				{
 					lineError.push_back(LinePointConstraint(vertA[j], vertB[i], vertB[index1], b->center));
 				}
 			}
 		}
+		for (size_t i = 0; i < A.getN(); ++i)
+		{
+			glm::vec3 a0 = vertA[i].getPosition(), a1;
+			size_t index1 = i + 1;
+			if (i == A.getN() - 1)
+			{
+				a1 = vertA[0].getPosition();
+				index1 = 0;
+			}
+			else a1 = vertA[i + 1].getPosition();
+
+			//CoM case B
+			//	provide a line distance constraint for a CoM to an edge segment (fails to work with 3 and 4 gons)
+			/*if (pointTriangle2D(a0, a1, oA, oB))
+			{
+				lineError.push_back(LinePointConstraint(b->center, vertA[i], vertA[index1], a->center));
+			}*/
+
+			//Hull vertices
+			for (size_t j = 0; j < B.getN(); ++j)
+			{
+				//TEST BEGIN
+				//	Expanding object A's hull
+				/*glm::vec3 offsetA0 = a0 + 0.5f * glm::normalize(a1 - a0);//2.5f * glm::normalize(a0 - oA);
+				glm::vec3 offsetA1 = a1 + 0.5f * glm::normalize(a0 - a1);//2.5f * glm::normalize(a1 - oA);
+				if (pointTriangle2D(offsetA0, offsetA1, oA, vertB[j].getPosition()))*/
+				//TEST END
+				if (pointTriangle2D(a0, a1, oA, vertB[j].getPosition()))
+				{
+					lineError.push_back(LinePointConstraint(vertB[j], vertA[i], vertA[index1], a->center));
+				}
+			}
+		}
 	}
 
-	for (size_t i = 0; i < A.getN(); ++i)
-	{
-		size_t nextIndex = (i == A.getN() - 1) ? 0 : i + 1;
-		selfError.push_back(DistanceConstraint(vertA[i], a->center, A.getRadius()));
-		selfError.push_back(DistanceConstraint(vertA[i], vertA[nextIndex], A.getNeighbor()));
-	}
+}
+
+void Collision::solveConstraints()
+{
 	if (Simulation::shockpropagation)
 	{
 		std::vector<Constraint*> c;
@@ -234,5 +285,7 @@ void Collision::simulatePair(NGon& A, NGon& B)
 			}
 		}
 	}
-	
+
+	lineError.clear();
+	selfError.clear();
 }

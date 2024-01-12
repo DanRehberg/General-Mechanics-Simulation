@@ -42,11 +42,12 @@ void DistanceConstraint::solve()
 	glm::vec3 correction = violation * incToRef;
 	a.addPosition(ratioA * correction);
 	b.addPosition(-ratioB * correction);
-	
+
 	if (!Simulation::verletResolution)
 	{
-		glm::vec3 relativeNormalVelocity = incToRef * (glm::dot(b.getVelocity(), incToRef) - glm::dot(a.getVelocity(), incToRef));
-		lagrangian(relativeNormalVelocity, a, b);
+		//glm::vec3 relativeNormalVelocity = incToRef * (glm::dot(b.getVelocity(), incToRef) - glm::dot(a.getVelocity(), incToRef));
+		//lagrangian(relativeNormalVelocity, a, b);
+		lagrangian(b.getVelocity() - a.getVelocity(), a, b);
 	}
 	else
 	{

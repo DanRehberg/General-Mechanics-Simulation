@@ -27,7 +27,7 @@ Constraint& Constraint::operator=(const Constraint& cp)
 	return *this;
 }
 
-void Constraint::lagrangian(const glm::vec3& J, Particle& A, Particle& B)//Expects n w/r to reference object (which is object B)
+float Constraint::lagrangian(const glm::vec3& J, Particle& A, Particle& B)//Expects n w/r to reference object (which is object B)
 {
 	//J dot V / JM^-1J^t
 	float jv = glm::dot(J, A.getVelocity()) + glm::dot(-J, B.getVelocity());//Note, can be simplified
@@ -36,24 +36,35 @@ void Constraint::lagrangian(const glm::vec3& J, Particle& A, Particle& B)//Expec
 	glm::vec3 weightedImpulse = langrange * J;
 	A.impulse(-A.getShockInverseMass() * weightedImpulse);
 	B.impulse(B.getShockInverseMass() * weightedImpulse);
+	return langrange;
 }
 
 float Constraint::maximumDirection(const glm::vec3& dir) const
 {
-	float a = glm::dot(dir, refA->getPosition());
-	float b = glm::dot(dir, refB->getPosition());
+	float a = glm::dot(dir, refA->getPrevPosition());
+	float b = glm::dot(dir, refB->getPrevPosition());
 	return (a > b) ? a : b;
 }
 
 void Constraint::solveShock(const glm::vec3& dir)
 {
+	if (!infiniteMass)
+	{
+		if (glm::dot(refA->getPosition(), dir) > glm::dot(refB->getPosition(), dir))
+		{
+			refA->setShockPropagationMass();
+			refB->setShockPropagationMass(true);
+		}
+		else
+		{
+			refB->setShockPropagationMass();
+			refA->setShockPropagationMass(true);
+		}
+	}
+	else
+	{
+		refA->setShockPropagationMass(true);
+		refB->setShockPropagationMass(true);
+	}
 	solve();
-	//if (glm::dot(refA->getPosition(), dir) > glm::dot(refB->getPosition(), dir))
-	{
-		refA->setShockPropagationMass();
-	}
-	//else
-	{
-		refB->setShockPropagationMass();
-	}
 }
