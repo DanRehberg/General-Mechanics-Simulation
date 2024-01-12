@@ -26,251 +26,459 @@ GLuint vert = 0, frag = 0, program = 0;
 GLint uniformIndex = -1, colorIndex = -1;
 GLuint vbo = 0, vao = 0, ubo = 0;
 long long tickSum = 0;
+constexpr bool reportData = true;
+constexpr size_t ignoreInitialCount = 450;
 
 int main(int argc, char* argv[])
 {
-	int quantity = 0;
-	std::cout << "NGon size?";
-	int badInput = 0;
-	while (quantity < 3 || quantity >= 100)
+	char yesNo = ' ';
+	std::cout << "Shock Test: ";
+	std::cin >> yesNo;
+	if (yesNo == 'n' || yesNo == 'N')
 	{
-		std::cout << "\nValue must be 3 or greater, but less than 100: ";
-		std::cin >> quantity;
-		if (std::cin.fail())
+		int quantity = 0;
+		std::cout << "NGon size?";
+		int badInput = 0;
+		while (quantity < 3 || quantity >= 100)
 		{
-			std::cerr << "Bad input value\n";
-			std::cin.clear();
-			std::string clear;
-			std::getline(std::cin, clear);
-			if (++badInput >= 5)return -1;
+			std::cout << "\nValue must be 3 or greater, but less than 100: ";
+			std::cin >> quantity;
+			if (std::cin.fail())
+			{
+				std::cerr << "Bad input value\n";
+				std::cin.clear();
+				std::string clear;
+				std::getline(std::cin, clear);
+				if (++badInput >= 5)return -1;
+			}
 		}
-	}
 
-	//Iteration and Data Collection variables
-	int inputIndex = -1, frameCount = 0, currentFrame = 0;
-	std::vector<std::vector<float>> areaDeviations;
-	std::vector<std::vector<glm::vec3>> positionDeviations;
-	std::vector<float> allAreaAverage, allPosDistanceAverage, allAreaStd, allPosStd;
+		bool quit = false;
 
-	badInput = 0;
-	std::cout << "How many frames to run per trial?";
-	while (frameCount < 1 || frameCount >= 2000)
-	{
-		std::cout << "\nValue must be 1 or greater, but less than 2,000: ";
-		std::cin >> frameCount;
-		if (std::cin.fail())
+		try
 		{
-			std::cerr << "Bad input value\n";
-			std::cin.clear();
-			std::string clear;
-			std::getline(std::cin, clear);
-			if (++badInput >= 5)return -1;
+			initSDL();
 		}
-	}
-	currentFrame = frameCount;
-	
-	try
-	{
-		//TEST
-		NGon n(glm::vec3(0.0f), 10.0f, quantity, 0.0f);
-		std::cout << n << "\n";
-	}
-	catch (std::exception err)
-	{
-		std::cout << err.what() << "\n";
-	}
-
-	bool quit = false;
-
-	try
-	{
-		initSDL();
-	}
-	catch (std::exception err)
-	{
-		std::cout << err.what() << std::endl;
-		quit = true;
-	}
-	
-	buildShaders();
-	buildLineBuffers();
-
-	SDL_Event sdlEvent;
-
-	float pos[] = { 0.0f, 0.25f, 0.0f, 1000.0f, 1000.0f, 1.0f };
-	float color[] = { 1.0f, 1.0f, 1.0f };
-	std::chrono::time_point<std::chrono::steady_clock> startTime, endTime;
-	try
-	{
-		NGon n(glm::vec3(960.0f, 540.0f, 0.0f), 100.0f, quantity, 5.0f);
-		float expectedAverage = 0.f;
-		for (size_t i = 0; i < quantity; ++i)
+		catch (std::exception err)
 		{
-			expectedAverage += n.getArea(i);
+			std::cout << err.what() << std::endl;
+			quit = true;
 		}
-		expectedAverage /= static_cast<float>(quantity);
-		std::cout << "Expected average area: " << expectedAverage << "\n";
-		n.setColor(glm::vec3(0.0f, 1.0f, 0.0f));
-		NGon ground(glm::vec3(960.0f, -900.0f, 0.0f), 959.0f, 4, 0.0f);
-		ground.setColor(glm::vec3(0.0f, 1.0f, 0.0f));
-		std::vector<glm::vec3> rootForInputSpaceOrder;
-		for (size_t i = 0; i < quantity; ++i)
+
+		buildShaders();
+		buildLineBuffers();
+
+		SDL_Event sdlEvent;
+
+		float pos[] = { 0.0f, 0.25f, 0.0f, 1000.0f, 1000.0f, 1.0f };
+		float color[] = { 1.0f, 1.0f, 1.0f };
+		std::chrono::time_point<std::chrono::steady_clock> startTime, endTime;
+		try
 		{
-			glm::vec3 direction = n.getParticle(i) - n.getPosition();
-			rootForInputSpaceOrder.push_back(glm::normalize(direction));
-		}
-		
-		while (!quit)
-		{
+			NGon ground(glm::vec3(960.0f, -900.0f, 0.0f), 959.0f, 4, 0.0f);
+			NGon wallLeft(glm::vec3(-500.0f, 0.0f, 0.0f), 539.0f, 4, 0.0f);
+			NGon wallRight(glm::vec3(2400.0f, 0.0f, 0.0f), 539.0f, 4, 0.0f);
+			ground.setColor(glm::vec3(1.0f, 1.0f, 1.0f));
+			wallLeft.setColor(glm::vec3(1.0f, 1.0f, 1.0f));
+			wallRight.setColor(glm::vec3(1.0f, 1.0f, 1.0f));
 			
-			if (currentFrame >= frameCount)
+			std::vector<NGon> objects;
+			objects.resize(1000);
+			for (size_t i = 0; i < 100; ++i)
 			{
-				//Analysis
-				float averagePosDev = 0.f, averageAreaDev = 0.f;
-				float stdPos = 0.f, stdArea = 0.f;
-				std::vector<float> positionDist(positionDeviations.size());
-				for (size_t i = 0; i < positionDeviations.size(); ++i)
+				for (size_t j = i * 10; j < i * 10 + 10; ++j)
 				{
-					for (size_t j = 0; j < positionDeviations[i].size(); ++j)
-					{
-						averageAreaDev += areaDeviations[i][j];
-						if (i < positionDeviations.size() - 1)
-						{
-							float mag = glm::length(positionDeviations[i + 1][j]
-								- positionDeviations[i][j]);
-							averagePosDev += mag;
-							positionDist.push_back(mag);
-						}
-					}
+					glm::vec3 pos(80.0f + static_cast<float>((j - i * 10) * 150), static_cast<float>(i) * 50.0f + 400.0f, 0.0f);
+					objects[j] = NGon(pos, 15, quantity, 5.0f);
+					objects[j].setColor(glm::vec3(1.0f, 1.0f, 0.0f));
 				}
-				if (positionDeviations.size() > 0)
-				{
-					float posN = positionDeviations[0].size();
-					float areaN = areaDeviations.size() * areaDeviations[0].size();
-					averagePosDev /= posN;
-					averageAreaDev /= areaN;
-					float sumP = 0.f, sumA = 0.f;
-					for (size_t i = 0; i < positionDist.size(); ++i)
-					{
-						float val = positionDist[i] - averagePosDev;
-						sumP += val * val;
-					}
-					for (size_t i = 0; i < areaDeviations.size(); ++i)
-					{
-						for (size_t j = 0; j < areaDeviations[i].size(); ++j)
-						{
-							float val = areaDeviations[i][j] - averageAreaDev;
-							sumA += val * val;
-						}
-					}
-					stdPos = std::sqrt(sumP / posN);
-					stdArea = std::sqrt(sumA / areaN);
-					allAreaAverage.push_back(averageAreaDev);
-					allAreaStd.push_back(stdArea);
-					allPosDistanceAverage.push_back(averagePosDev);
-					allPosStd.push_back(stdPos);
-					std::cout << "trial: " << inputIndex << "\n";
-				}
-				//reset to next trial
-				currentFrame = 0;
-				if (++inputIndex == quantity)
-				{
-					std::string fileName = "No_Record" + std::to_string(quantity) + "-NGon_" +
-						std::to_string(frameCount) + "-Steps_" +
-						std::to_string(Simulation::solverIterations) + "-Iterations_" +
-						((Simulation::verletResolution == true) ? "Verlet.csv" : "Lagrange.csv");
-					std::ofstream out(fileName);
-					if (out.is_open())
-					{
-						std::cout << rootForInputSpaceOrder.size() << " " <<
-							allPosDistanceAverage.size() << " " <<
-							allPosStd.size() << " " <<
-							allAreaAverage.size() << " " <<
-							allAreaStd.size() << std::endl;
-						out << "Dir X, Dir Y, Dir Z, Avg Pos, Std Pos, Avg Area, Std Area";
-						for (size_t i = 0; i < quantity; ++i)
-						{
-							out << '\n' << rootForInputSpaceOrder[i].x << ',' <<
-								rootForInputSpaceOrder[i].y << ',' <<
-								rootForInputSpaceOrder[i].z << ',' <<
-								allPosDistanceAverage[i] << ',' <<
-								allPosStd[i] << ',' <<
-								allAreaAverage[i] << ',' <<
-								allAreaStd[i];
-						}
-						out.close();
-					}
-					quit = true;
-					continue;
-				}
-				n = NGon(glm::vec3(960.0f, 540.0f, 0.0f), 100.0f, quantity, 5.0f);
-				Simulation::shockDirection = rootForInputSpaceOrder[inputIndex];
-				areaDeviations.clear();
-				positionDeviations.clear();
 			}
 
-			startTime = std::chrono::steady_clock::now();
-			//Event Polling
-			while (SDL_PollEvent(&sdlEvent) != 0)
+			/*for (size_t i = 0; i < objects.size() / 4; ++i)
 			{
-				switch (sdlEvent.type)
-				{
-				case SDL_KEYDOWN: quit = (sdlEvent.key.keysym.scancode == 41) ? true : false; break;
-				default: break;
-				}
+				glm::vec3 pos(80.0f + static_cast<float>(i * 150), 540.0f, 0.0f);
+				objects[i] = NGon(pos, 50, quantity, 5.0f);
+				objects[i].setColor(glm::vec3(1.0f, 1.0f, 0.0f));
 			}
-			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-			//Recurring Trial Area
+			for (size_t i = objects.size() / 4; i < objects.size() / 2; ++i)
 			{
-				if (tickSum > Simulation::updateInterval)
+				glm::vec3 pos(80.0f + static_cast<float>((i - objects.size() / 4) * 150), 340.0f, 0.0f);
+				objects[i] = NGon(pos, 50, quantity, 5.0f);
+				objects[i].setColor(glm::vec3(1.0f, 1.0f, 0.0f));
+			}
+			for (size_t i = objects.size() / 2; i < objects.size() / 2 + objects.size() / 4; ++i)
+			{
+				glm::vec3 pos(80.0f + static_cast<float>((i - objects.size() / 2) * 150), 140.0f, 0.0f);
+				objects[i] = NGon(pos, 50, quantity, 5.0f);
+				objects[i].setColor(glm::vec3(1.0f, 1.0f, 0.0f));
+			}
+			for (size_t i = objects.size() / 2 + objects.size() / 4; i < objects.size(); ++i)
+			{
+				glm::vec3 pos(80.0f + static_cast<float>((i - objects.size() / 2 - objects.size() / 4) * 150), 640.0f, 0.0f);
+				objects[i] = NGon(pos, 50, quantity, 5.0f);
+				objects[i].setColor(glm::vec3(1.0f, 1.0f, 0.0f));
+			}*/
+
+			while (!quit)
+			{
+
+			
+
+				startTime = std::chrono::steady_clock::now();
+				//Event Polling
+				while (SDL_PollEvent(&sdlEvent) != 0)
 				{
-					areaDeviations.push_back(std::vector<float>());
-					positionDeviations.push_back(std::vector<glm::vec3>());
-					//Collect data at start of frame
+					switch (sdlEvent.type)
+					{
+					case SDL_KEYDOWN: quit = (sdlEvent.key.keysym.scancode == 41) ? true : false; break;
+					default: break;
+					}
+				}
+				glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+				//Recurring Trial Area
+				{
+					if (tickSum > Simulation::updateInterval)
+					{
+						//Time integration
+						tickSum = 0;
+						for (size_t i = 0; i < objects.size(); ++i)
+						{
+							objects[i].update(Simulation::deltaTime);
+							Collision::simulatePair(objects[i], wallLeft);
+							Collision::simulatePair(objects[i], wallRight);
+							Collision::simulatePair(objects[i], ground);
+							Collision::selfConstraints(objects[i]);
+							glm::vec3 v = objects[i].getVelocity();
+							v *= (glm::length(v) / 20.0f);
+							v += 1.f;
+							//v.x = v.y;
+							//v.z = temp + v.y * 0.4;
+							//v.z = temp;
+							//v.y = temp;
+							//v.x = v.y;
+
+							v *= 0.5f;
+							objects[i].setColor(v);
+						}
+						for (size_t i = 0; i < objects.size(); ++i)
+						{
+							for (size_t j = i + 1; j < objects.size(); ++j)
+							{
+								Collision::simulatePair(objects[i], objects[j]);
+							}
+						}
+						Collision::solveConstraints();
+					}
+
+					glBindVertexArray(vao);
+					glUseProgram(program);
+					for (size_t i = 0; i < objects.size(); ++i)
+					{
+						objects[i].getColor(color);
+						for (size_t j = 0; j < objects[i].getN(); ++j)
+						{
+							objects[i].getLine(pos, j);
+							glUniform3fv(uniformIndex, 2, &pos[0]);
+							glUniform3fv(colorIndex, 1, &color[0]);
+							glDrawArrays(GL_LINES, 0, 2);
+						}
+					}
+					wallLeft.getColor(color);
+					for (size_t i = 0; i < wallLeft.getN(); ++i)
+					{
+						wallLeft.getLine(pos, i);
+						glUniform3fv(uniformIndex, 2, &pos[0]);
+						glUniform3fv(colorIndex, 1, &color[0]);
+						glDrawArrays(GL_LINES, 0, 2);
+					}
+					wallRight.getColor(color);
+					for (size_t i = 0; i < wallRight.getN(); ++i)
+					{
+						wallRight.getLine(pos, i);
+						glUniform3fv(uniformIndex, 2, &pos[0]);
+						glUniform3fv(colorIndex, 1, &color[0]);
+						glDrawArrays(GL_LINES, 0, 2);
+					}
+					ground.getColor(color);
+					for (size_t i = 0; i < ground.getN(); ++i)
+					{
+						ground.getLine(pos, i);
+						glUniform3fv(uniformIndex, 2, &pos[0]);
+						glUniform3fv(colorIndex, 1, &color[0]);
+						glDrawArrays(GL_LINES, 0, 2);
+					}
+					glBindVertexArray(0);
+					glUseProgram(0);
+				}
+				//General Frame Updates
+				SDL_GL_SwapWindow(window);
+				endTime = std::chrono::steady_clock::now();
+				tickSum += std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
+			}
+		}
+		catch (std::exception err)
+		{
+			std::cout << err.what() << std::endl;
+		}
+	}
+	else
+	{
+		int quantity = 0;
+		std::cout << "NGon size?";
+		int badInput = 0;
+		while (quantity < 3 || quantity >= 100)
+		{
+			std::cout << "\nValue must be 3 or greater, but less than 100: ";
+			std::cin >> quantity;
+			if (std::cin.fail())
+			{
+				std::cerr << "Bad input value\n";
+				std::cin.clear();
+				std::string clear;
+				std::getline(std::cin, clear);
+				if (++badInput >= 5)return -1;
+			}
+		}
+
+		//Iteration and Data Collection variables
+		int inputIndex = -1, frameCount = 0, currentFrame = 0;
+		std::vector<std::vector<float>> areaDeviations;
+		std::vector<std::vector<glm::vec3>> positionDeviations;
+		std::vector<float> allAreaAverage, allPosDistanceAverage, allAreaStd, allPosStd;
+
+		badInput = 0;
+		std::cout << "How many frames to run per trial?";
+		while (frameCount < 1 || frameCount >= 2000)
+		{
+			std::cout << "\nValue must be 1 or greater, but less than 2,000: ";
+			std::cin >> frameCount;
+			if (std::cin.fail())
+			{
+				std::cerr << "Bad input value\n";
+				std::cin.clear();
+				std::string clear;
+				std::getline(std::cin, clear);
+				if (++badInput >= 5)return -1;
+			}
+		}
+		currentFrame = frameCount;
+
+		bool quit = false;
+
+		try
+		{
+			initSDL();
+		}
+		catch (std::exception err)
+		{
+			std::cout << err.what() << std::endl;
+			quit = true;
+		}
+
+		buildShaders();
+		buildLineBuffers();
+
+		SDL_Event sdlEvent;
+
+		float pos[] = { 0.0f, 0.25f, 0.0f, 1000.0f, 1000.0f, 1.0f };
+		float color[] = { 1.0f, 1.0f, 1.0f };
+		std::chrono::time_point<std::chrono::steady_clock> startTime, endTime;
+		try
+		{
+			NGon n(glm::vec3(960.0f, 540.0f, 0.0f), 100.0f, quantity, 5.0f);
+			float expectedAverage = 0.f;
+			for (size_t i = 0; i < quantity; ++i)
+			{
+				expectedAverage += n.getArea(i);
+			}
+			expectedAverage /= static_cast<float>(quantity);
+			std::cout << "Expected average area: " << expectedAverage << "\n";
+			n.setColor(glm::vec3(0.0f, 1.0f, 0.0f));
+			NGon ground(glm::vec3(960.0f, -900.0f, 0.0f), 959.0f, 4, 0.0f);
+			ground.setColor(glm::vec3(0.0f, 1.0f, 0.0f));
+			NGon another(glm::vec3(960.0f, 220.0f, 0.0f), 50.0f, 4, 5.0f);
+			std::vector<glm::vec3> rootForInputSpaceOrder;
+			std::cout << "n: " << n.getID() << " ground: " << ground.getID() << " another: " << another.getID() << '\n';
+			for (size_t i = 0; i < quantity; ++i)
+			{
+				glm::vec3 direction = n.getParticle(i) - n.getPosition();
+				rootForInputSpaceOrder.push_back(glm::normalize(direction));
+			}
+
+			while (!quit)
+			{
+
+				if (currentFrame >= frameCount)
+				{
+					//Analysis
+					float averagePosDev = 0.f, averageAreaDev = 0.f;
+					float stdPos = 0.f, stdArea = 0.f;
+					std::vector<float> positionDist(positionDeviations.size());
+					for (size_t i = 0; i < positionDeviations.size(); ++i)
+					{
+						for (size_t j = 0; j < positionDeviations[i].size(); ++j)
+						{
+							averageAreaDev += areaDeviations[i][j];
+							if (i < positionDeviations.size() - 1)
+							{
+								float mag = glm::length(positionDeviations[i + 1][j]
+									- positionDeviations[i][j]);
+								averagePosDev += mag;
+								positionDist.push_back(mag);
+							}
+						}
+					}
+					if (positionDeviations.size() > 0)
+					{
+						float posN = positionDeviations[0].size();
+						float areaN = areaDeviations.size() * areaDeviations[0].size();
+						averagePosDev /= posN;
+						averageAreaDev /= areaN;
+						float sumP = 0.f, sumA = 0.f;
+						for (size_t i = 0; i < positionDist.size(); ++i)
+						{
+							float val = positionDist[i] - averagePosDev;
+							sumP += val * val;
+						}
+						for (size_t i = 0; i < areaDeviations.size(); ++i)
+						{
+							for (size_t j = 0; j < areaDeviations[i].size(); ++j)
+							{
+								float val = areaDeviations[i][j] - averageAreaDev;
+								sumA += val * val;
+							}
+						}
+						stdPos = std::sqrt(sumP / posN);
+						stdArea = std::sqrt(sumA / areaN);
+						allAreaAverage.push_back(averageAreaDev);
+						allAreaStd.push_back(stdArea);
+						allPosDistanceAverage.push_back(averagePosDev);
+						allPosStd.push_back(stdPos);
+					}
+					//reset to next trial
+					currentFrame = 0;
+					if (++inputIndex == quantity)
+					{
+						std::string fileName = "No_Record" + std::to_string(quantity) + "-NGon_" +
+							std::to_string(frameCount) + "-Steps_" +
+							std::to_string(Simulation::solverIterations) + "-Iterations_" +
+							((Simulation::verletResolution == true) ? "Verlet.csv" : "Lagrange.csv");
+						if (reportData)
+						{
+							std::ofstream out(fileName);
+							if (out.is_open())
+							{
+								std::cout << rootForInputSpaceOrder.size() << " " <<
+									allPosDistanceAverage.size() << " " <<
+									allPosStd.size() << " " <<
+									allAreaAverage.size() << " " <<
+									allAreaStd.size() << std::endl;
+								out << "Dir X, Dir Y, Dir Z, Avg Pos, Std Pos, Avg Area, Std Area";
+								for (size_t i = 0; i < quantity; ++i)
+								{
+									out << '\n' << rootForInputSpaceOrder[i].x << ',' <<
+										rootForInputSpaceOrder[i].y << ',' <<
+										rootForInputSpaceOrder[i].z << ',' <<
+										allPosDistanceAverage[i] << ',' <<
+										allPosStd[i] << ',' <<
+										allAreaAverage[i] << ',' <<
+										allAreaStd[i];
+								}
+								out.close();
+							}
+						}
+						quit = true;
+						continue;
+					}
+					n = NGon(glm::vec3(960.0f, 540.0f, 0.0f), 100.0f, quantity, 5.0f);
+					Simulation::shockDirection = rootForInputSpaceOrder[inputIndex];
+					areaDeviations.clear();
+					positionDeviations.clear();
+					std::cout << "trial: " << inputIndex << " dir: " << Simulation::shockDirection.x << " " << Simulation::shockDirection.y << "\n";
+				}
+
+				startTime = std::chrono::steady_clock::now();
+				//Event Polling
+				while (SDL_PollEvent(&sdlEvent) != 0)
+				{
+					switch (sdlEvent.type)
+					{
+					case SDL_KEYDOWN: quit = (sdlEvent.key.keysym.scancode == 41) ? true : false; break;
+					default: break;
+					}
+				}
+				glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+				//Recurring Trial Area
+				{
+					if (tickSum > Simulation::updateInterval)
+					{
+						if (currentFrame >= ignoreInitialCount)
+						{
+							areaDeviations.push_back(std::vector<float>());
+							positionDeviations.push_back(std::vector<glm::vec3>());
+							//Collect data at start of frame
+							for (size_t i = 0; i < n.getN(); ++i)
+							{
+								positionDeviations[currentFrame - ignoreInitialCount].push_back(n.getParticle(i));
+								areaDeviations[currentFrame - ignoreInitialCount].push_back(n.getArea(i));
+							}
+						}
+
+						//Time integration
+						n.update(Simulation::deltaTime);
+						//another.update(Simulation::deltaTime);
+						tickSum = 0;
+						++currentFrame;
+
+						Collision::simulatePair(n, ground);
+						//Collision::simulatePair(another, ground);
+						//Collision::simulatePair(n, another);
+						//Collision::simulatePair(another, n);
+						//Collision::simulatePair(ground, another);
+						//Collision::simulatePair(ground, n);
+						Collision::selfConstraints(n);
+						//Collision::selfConstraints(another);
+						Collision::solveConstraints();
+					}
+
+					glBindVertexArray(vao);
+					glUseProgram(program);
+					n.getColor(color);
 					for (size_t i = 0; i < n.getN(); ++i)
 					{
-						positionDeviations[currentFrame].push_back(n.getParticle(i));
-						areaDeviations[currentFrame].push_back(n.getArea(i));
+						n.getLine(pos, i);
+						glUniform3fv(uniformIndex, 2, &pos[0]);
+						glUniform3fv(colorIndex, 1, &color[0]);
+						glDrawArrays(GL_LINES, 0, 2);
 					}
-
-					//Time integration
-					n.update(Simulation::deltaTime);
-					//Events to simulate
-					Collision::simulatePair(n, ground);
-					tickSum = 0;
-					++currentFrame;
+					ground.getColor(color);
+					for (size_t i = 0; i < ground.getN(); ++i)
+					{
+						ground.getLine(pos, i);
+						glUniform3fv(uniformIndex, 2, &pos[0]);
+						glUniform3fv(colorIndex, 1, &color[0]);
+						glDrawArrays(GL_LINES, 0, 2);
+					}
+					/*for (size_t i = 0; i < another.getN(); ++i)
+					{
+						another.getLine(pos, i);
+						glUniform3fv(uniformIndex, 2, &pos[0]);
+						glUniform3fv(colorIndex, 1, &color[0]);
+						glDrawArrays(GL_LINES, 0, 2);
+					}*/
+					glBindVertexArray(0);
+					glUseProgram(0);
 				}
-
-				glBindVertexArray(vao);
-				glUseProgram(program);
-				n.getColor(color);
-				for (size_t i = 0; i < n.getN(); ++i)
-				{
-					n.getLine(pos, i);
-					glUniform3fv(uniformIndex, 2, &pos[0]);
-					glUniform3fv(colorIndex, 1, &color[0]);
-					glDrawArrays(GL_LINES, 0, 2);
-				}
-				ground.getColor(color);
-				for (size_t i = 0; i < ground.getN(); ++i)
-				{
-					ground.getLine(pos, i);
-					glUniform3fv(uniformIndex, 2, &pos[0]);
-					glUniform3fv(colorIndex, 1, &color[0]);
-					glDrawArrays(GL_LINES, 0, 2);
-				}
-				glBindVertexArray(0);
-				glUseProgram(0);
+				//General Frame Updates
+				SDL_GL_SwapWindow(window);
+				endTime = std::chrono::steady_clock::now();
+				tickSum += std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
 			}
-			//General Frame Updates
-			SDL_GL_SwapWindow(window);
-			endTime = std::chrono::steady_clock::now();
-			tickSum += std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
 		}
-	}
-	catch (std::exception err)
-	{
-		std::cout << err.what() << std::endl;
+		catch (std::exception err)
+		{
+			std::cout << err.what() << std::endl;
+		}
 	}
 
 	closeShaders();
@@ -424,6 +632,8 @@ void initSDL()
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		glClearDepth(1.0);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		glLineWidth(3.0f);
 
 		GLenum err;
 		while ((err = glGetError()) != GL_NO_ERROR)
