@@ -4,7 +4,8 @@ Work in progress.. Was used to generate stress tests for the constraint solver t
 
 Notes on some dependencies:
 - SDL 2+
-- Unofficial OpenGL Math library
+- OpenGL Extension Wrangler (GLEW)
+- Unofficial OpenGL Math library (GLM)
 - Uses OpenGL 4+
   - OpenGL3+ is fine, just changes some declarations of version in SDL Init and shaders
 
